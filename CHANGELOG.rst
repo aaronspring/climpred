@@ -20,7 +20,7 @@ New Features
   fair Continuous Ranked Probability Score of Ferro (2014), giving an
   unbiased estimate that is comparable across ensembles of different size, e.g.
   ``HindcastEnsemble.verify(metric="crps", fair=True, ...)``.
-  `Aaron Spring`_
+  (:pr:`22`) `Aaron Spring`_
 
 
 Internals/Minor Fixes
