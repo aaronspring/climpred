@@ -2890,11 +2890,14 @@ def _crps_ensemble_fair(
 
     where :math:`x_m` are the ensemble members and :math:`o` the verification.
     This makes scores comparable across ensembles of different size. Requires at
-    least two members. The pairwise spread term builds an :math:`M \times M` array,
-    so memory scales with the square of the ensemble size.
+    least two members; :math:`M` is counted per forecast excluding ``NaN`` members,
+    so ragged ensembles are handled correctly. The pairwise spread term builds an
+    :math:`M \times M` array, so memory scales with the square of the ensemble size.
     """
     skill = abs(forecast - verif).mean(member_dim)
-    M = forecast.sizes[member_dim]
+    # count non-NaN members per forecast so ragged ensembles normalize correctly,
+    # matching scores.probability.crps_for_ensemble(method="fair").
+    M = forecast.notnull().sum(member_dim)
     forecast_i = forecast.rename({member_dim: "__i"})
     forecast_j = forecast.rename({member_dim: "__j"})
     spread = abs(forecast_i - forecast_j).sum(["__i", "__j"]) / (2 * M * (M - 1))

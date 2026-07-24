@@ -237,6 +237,28 @@ def test_crps_fair_matches_manual():
     assert np.isclose(float(actual), expected)
 
 
+def test_crps_fair_ragged_ensemble_counts_non_nan_members():
+    """Fair CRPS counts non-NaN members per forecast (ragged ensembles).
+
+    Matches ``scores.probability.crps_for_ensemble(method="fair")``.
+    """
+    from climpred.metrics import __crps as crps_metric
+
+    # 5 members but 2 are NaN -> effective M = 3
+    x_full = np.array([1.0, np.nan, 3.0, 4.0, np.nan])
+    forecast = xr.DataArray(x_full, dims="member").to_dataset(name="v")
+    verif = xr.DataArray(2.0).to_dataset(name="v")
+    actual = crps_metric.function(forecast, verif, dim=["member"], fair=True)["v"]
+
+    x = x_full[~np.isnan(x_full)]  # [1, 3, 4]
+    o = 2.0
+    M = x.size  # 3, not 5
+    skill = np.abs(x - o).mean()
+    spread = np.abs(x[:, None] - x[None, :]).sum() / (2 * M * (M - 1))
+    expected = skill - spread
+    assert np.isclose(float(actual), expected)
+
+
 def test_HindcastEnsemble_rps_terciles(hindcast_hist_obs_1d):
     actual = hindcast_hist_obs_1d.isel(lead=range(3), init=range(10)).verify(
         metric="rps",
