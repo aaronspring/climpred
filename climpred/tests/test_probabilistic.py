@@ -208,6 +208,57 @@ def test_HindcastEnsemble_verify_probabilistic_metric_e2o_fails(
         )
 
 
+def test_HindcastEnsemble_crps_fair(hindcast_hist_obs_1d):
+    """Fair CRPS (Ferro 2014) runs, is finite and differs from the standard CRPS."""
+    he = hindcast_hist_obs_1d.isel(lead=range(3), init=range(10))
+    kwargs = dict(comparison="m2o", dim="member", alignment="same_inits")
+    standard = he.verify(metric="crps", **kwargs)
+    fair = he.verify(metric="crps", fair=True, **kwargs)
+    assert fair.notnull().all()
+    # fair estimator divides the spread term by M*(M-1) instead of M**2, so the
+    # subtracted spread is larger and fair CRPS <= standard CRPS.
+    assert (fair["SST"] <= standard["SST"] + 1e-12).all()
+    assert not np.allclose(fair["SST"], standard["SST"])
+
+
+def test_crps_fair_matches_manual():
+    """Fair CRPS matches a hand-computed reference for a tiny ensemble."""
+    from climpred.metrics import __crps as crps_metric
+
+    forecast = xr.DataArray([1.0, 3.0, 4.0], dims="member").to_dataset(name="v")
+    verif = xr.DataArray(2.0).to_dataset(name="v")
+    actual = crps_metric.function(forecast, verif, dim=["member"], fair=True)["v"]
+    x = np.array([1.0, 3.0, 4.0])
+    o = 2.0
+    M = x.size
+    skill = np.abs(x - o).mean()
+    spread = np.abs(x[:, None] - x[None, :]).sum() / (2 * M * (M - 1))
+    expected = skill - spread
+    assert np.isclose(float(actual), expected)
+
+
+def test_crps_fair_ragged_ensemble_counts_non_nan_members():
+    """Fair CRPS counts non-NaN members per forecast (ragged ensembles).
+
+    Matches ``scores.probability.crps_for_ensemble(method="fair")``.
+    """
+    from climpred.metrics import __crps as crps_metric
+
+    # 5 members but 2 are NaN -> effective M = 3
+    x_full = np.array([1.0, np.nan, 3.0, 4.0, np.nan])
+    forecast = xr.DataArray(x_full, dims="member").to_dataset(name="v")
+    verif = xr.DataArray(2.0).to_dataset(name="v")
+    actual = crps_metric.function(forecast, verif, dim=["member"], fair=True)["v"]
+
+    x = x_full[~np.isnan(x_full)]  # [1, 3, 4]
+    o = 2.0
+    M = x.size  # 3, not 5
+    skill = np.abs(x - o).mean()
+    spread = np.abs(x[:, None] - x[None, :]).sum() / (2 * M * (M - 1))
+    expected = skill - spread
+    assert np.isclose(float(actual), expected)
+
+
 def test_HindcastEnsemble_rps_terciles(hindcast_hist_obs_1d):
     actual = hindcast_hist_obs_1d.isel(lead=range(3), init=range(10)).verify(
         metric="rps",

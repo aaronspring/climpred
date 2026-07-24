@@ -14,6 +14,15 @@ What's New
     # cut border when saving (for maps)
     mpl.rcParams["savefig.bbox"] = "tight"
 
+New Features
+------------
+- Add ``fair`` option to ``metric="crps"`` computing the ensemble-size adjusted
+  fair Continuous Ranked Probability Score of Ferro (2014), giving an
+  unbiased estimate that is comparable across ensembles of different size, e.g.
+  ``HindcastEnsemble.verify(metric="crps", fair=True, ...)``.
+  (:pr:`22`) `Aaron Spring`_
+
+
 Internals/Minor Fixes
 ---------------------
 - Fix broken GEFS link (:pr:`807`) `Trevor Gamblin`_
