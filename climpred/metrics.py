@@ -2867,6 +2867,43 @@ __threshold_brier_score = Metric(
 )
 
 
+def _crps_ensemble_fair(
+    verif: xr.Dataset,
+    forecast: xr.Dataset,
+    dim: List[str],
+    member_dim: str = "member",
+    weights: Optional[xr.Dataset] = None,
+    keep_attrs: bool = False,
+) -> xr.Dataset:
+    r"""Fair (ensemble-size adjusted) Continuous Ranked Probability Score.
+
+    The standard ensemble CRPS estimator used by
+    :py:func:`.xskillscore.crps_ensemble` is biased for finite ensemble size
+    :math:`M`; the bias vanishes only as :math:`M \to \infty`. The fair estimator
+    of :cite:t:`Ferro2014` corrects this by dividing the ensemble spread term by
+    :math:`M(M-1)` instead of :math:`M^{2}`, yielding an unbiased estimate of the
+    CRPS that the same ensemble would achieve with infinitely many members:
+
+    .. math::
+        CRPS_{fair} = \frac{1}{M} \sum_{m=1}^{M} |x_m - o|
+            - \frac{1}{2M(M-1)} \sum_{i=1}^{M} \sum_{j=1}^{M} |x_i - x_j|,
+
+    where :math:`x_m` are the ensemble members and :math:`o` the verification.
+    This makes scores comparable across ensembles of different size. Requires at
+    least two members. The pairwise spread term builds an :math:`M \times M` array,
+    so memory scales with the square of the ensemble size.
+    """
+    skill = abs(forecast - verif).mean(member_dim)
+    M = forecast.sizes[member_dim]
+    forecast_i = forecast.rename({member_dim: "__i"})
+    forecast_j = forecast.rename({member_dim: "__j"})
+    spread = abs(forecast_i - forecast_j).sum(["__i", "__j"]) / (2 * M * (M - 1))
+    res = skill - spread
+    if weights is not None:
+        return res.weighted(weights).mean(dim, keep_attrs=keep_attrs)
+    return res.mean(dim, keep_attrs=keep_attrs)
+
+
 def _crps(
     forecast: xr.Dataset,
     verif: xr.Dataset,
@@ -2899,7 +2936,11 @@ def _crps(
         verif: Verification data without ``member`` dim.
         dim: Dimension to apply metric over. Expects at least
             ``member``. Other dimensions are passed to ``xskillscore`` and averaged.
-        metric_kwargs: optional, see :py:func:`.xskillscore.crps_ensemble`
+        metric_kwargs: optional, see :py:func:`.xskillscore.crps_ensemble`.
+            If ``fair=True`` is passed, the ensemble-size adjusted fair CRPS of
+            :cite:t:`Ferro2014` is computed instead, giving an unbiased estimate
+            that is comparable across ensembles of different size (requires at least
+            two members). Defaults to ``fair=False``.
 
     Notes:
         +-----------------+-----------+
@@ -2914,6 +2955,7 @@ def _crps(
 
     References:
         * :cite:t:`Matheson1976`
+        * :cite:t:`Ferro2014` (for ``fair=True``)
         * https://www.lokad.com/continuous-ranked-probability-score
 
     See also:
@@ -2945,6 +2987,17 @@ def _crps(
     """
     dim = _remove_member_from_dim_or_raise(dim)
     # switch positions because xskillscore.crps_ensemble(verif, forecasts)
+    metric_kwargs = dict(metric_kwargs)
+    if metric_kwargs.pop("fair", False):
+        # xskillscore.crps_ensemble has no fair option, so compute it here.
+        return _crps_ensemble_fair(
+            verif,
+            forecast,
+            dim=dim,
+            member_dim=metric_kwargs.pop("member_dim", "member"),
+            weights=metric_kwargs.pop("weights", None),
+            keep_attrs=metric_kwargs.pop("keep_attrs", False),
+        )
     return crps_ensemble(verif, forecast, dim=dim, **metric_kwargs)
 
 
